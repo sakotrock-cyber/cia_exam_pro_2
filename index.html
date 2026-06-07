@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIA Exam Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-100 transition-colors duration-300">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // 🛑 นำ Web App URL "ตัวใหม่ล่าสุด" มาวางที่นี่ 🛑
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyuuMX7EqEjyQc0DXIDe7awcnxiqVLLPWCB6xzaDslG5hGdo9NgsCSETTTO5kpF0YsM/exec";
+
+        function App() {
+            const [isDark, setIsDark] = React.useState(false);
+            const [step, setStep] = React.useState('login'); 
+            
+            const [userId, setUserId] = React.useState('');
+            const [userToken, setUserToken] = React.useState('');
+            const [user, setUser] = React.useState(null);
+            
+            const [allQuestions, setAllQuestions] = React.useState([]);
+            const [loading, setLoading] = React.useState(false);
+            
+            const [examQuestions, setExamQuestions] = React.useState([]);
+            const [answers, setAnswers] = React.useState({});
+            const [flags, setFlags] = React.useState({}); 
+            const [currentQ, setCurrentQ] = React.useState(0);
+            const [lang, setLang] = React.useState('TH');
+            const [timeLeft, setTimeLeft] = React.useState(0);
+            
+            const [numQ, setNumQ] = React.useState(120);
+            const [timeLimit, setTimeLimit] = React.useState(120);
+            const [mode, setMode] = React.useState('serious'); 
+            
+            // เพิ่ม unit เข้ามาใน state เริ่มต้น
+            const [mixRules, setMixRules] = React.useState([{ id: Date.now(), part: 'All', session: 'All', unit: 'All', percent: 100 }]);
+            
+            const [hasSavedSession, setHasSavedSession] = React.useState(false);
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                const id = e.target.username.value;
+                const pass = e.target.password.value;
+                try {
+                    const res = await fetch(`${WEB_APP_URL}?action=login&id=${id}&pass=${pass}`);
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        setUserId(id);
+                        setUser(data.name);
+                        setUserToken(data.token);
+                        fetchQuestions();
+                        checkSavedSession(id);
+                    } else {
+                        alert(data.message);
+                        setLoading(false);
+                    }
+                } catch (err) { alert("เชื่อมต่อล้มเหลว"); setLoading(false); }
+            };
+
+            const fetchQuestions = async () => {
+                try {
+                    const res = await fetch(`${WEB_APP_URL}?action=getQuestions`);
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        setAllQuestions(data.data.filter(q => q.Question_TH && q.Question_TH.trim() !== ''));
+                        setStep('dashboard');
+                    }
+                } catch (err) { alert("ดึงข้อสอบล้มเหลว"); }
+                setLoading(false);
+            };
+
+            const checkSavedSession = (currentId) => {
+                const saved = localStorage.getItem('cia_save');
+                if(saved) {
+                    const parsed = JSON.parse(saved);
+                    if(parsed.userId === currentId) setHasSavedSession(true);
+                }
+            };
+
+            const saveSession = () => {
+                const sessionData = { userId, userToken, examQuestions, answers, flags, currentQ, timeLeft, mode, timeLimit };
+                localStorage.setItem('cia_save', JSON.stringify(sessionData));
+                alert('บันทึกสถานะเรียบร้อย สามารถปิดเว็บได้เลย');
+            };
+
+            const resumeSession = () => {
+                const data = JSON.parse(localStorage.getItem('cia_save'));
+                setUserToken(data.userToken);
+                setExamQuestions(data.examQuestions);
+                setAnswers(data.answers || {});
+                setFlags(data.flags || {});
+                setCurrentQ(data.currentQ);
+                setTimeLeft(data.timeLeft);
+                setMode(data.mode);
+                setTimeLimit(data.timeLimit);
+                setStep('exam');
+            };
+
+            const clearSession = () => {
+                localStorage.removeItem('cia_save');
+                setHasSavedSession(false);
+            };
+
+            const addRule = () => {
+                setMixRules([...mixRules, { id: Date.now(), part: 'All', session: 'All', unit: 'All', percent: 0 }]);
+            };
+            
+            const removeRule = (id) => {
+                setMixRules(mixRules.filter(r => r.id !== id));
+            };
+            
+            const updateRule = (id, field, value) => {
+                setMixRules(mixRules.map(r => {
+                    if (r.id === id) {
+                        const updated = { ...r, [field]: value };
+                        if (field === 'part') {
+                            updated.session = 'All';
+                            updated.unit = 'All'; // รีเซ็ต Unit ด้วยเมื่อเปลี่ยน Part
+                        }
+                        if (field === 'session') {
+                            updated.unit = 'All'; // รีเซ็ต Unit ด้วยเมื่อเปลี่ยน Session
+                        }
+                        return updated;
+                    }
+                    return r;
+                }));
+            };
+
+            const startExam = () => {
+                const currentTotalPercent = mixRules.reduce((sum, r) => sum + parseInt(r.percent || 0), 0);
+                if (currentTotalPercent !== 100) {
+                    alert(`ผลรวมเปอร์เซ็นต์ต้องเท่ากับ 100% พอดีครับ (ตอนนี้รวมได้ ${currentTotalPercent}%)`);
+                    return;
+                }
+
+                let totalRequested = parseInt(numQ);
+                let finalQuestions = [];
+                let usedQuestions = new Set(); 
+
+                mixRules.forEach(rule => {
+                    let targetCount = Math.round(totalRequested * (rule.percent / 100));
+                    
+                    let pool = allQuestions.filter(q => {
+                        if (usedQuestions.has(q)) return false; 
+                        if (rule.part !== 'All' && q.Part !== rule.part) return false;
+                        if (rule.session !== 'All' && q.Session !== rule.session) return false;
+                        if (rule.unit !== 'All' && q.Unit !== rule.unit) return false; // กรองด้วย Unit
+                        return true;
+                    });
+                    
+                    pool.sort(() => 0.5 - Math.random());
+                    let selected = pool.slice(0, targetCount);
+                    selected.forEach(q => usedQuestions.add(q));
+                    
+                    finalQuestions = [...finalQuestions, ...selected];
+                });
+
+                if (finalQuestions.length < totalRequested) {
+                    let needed = totalRequested - finalQuestions.length;
+                    let remainingPool = allQuestions.filter(q => !usedQuestions.has(q));
+                    
+                    remainingPool.sort(() => 0.5 - Math.random());
+                    let pad = remainingPool.slice(0, needed);
+                    finalQuestions = [...finalQuestions, ...pad];
+                    
+                    alert(`⚠️ ข้อสอบในหมวดที่คุณเลือกมีจำนวนไม่พอ ระบบจึงดึงข้อสอบจากหมวดอื่นมา "โปะ" ผสมเพิ่มอีก ${pad.length} ข้อ เพื่อให้ได้ครบ ${totalRequested} ข้อครับ`);
+                }
+
+                finalQuestions = finalQuestions.slice(0, totalRequested);
+                finalQuestions.sort(() => 0.5 - Math.random()); 
+                
+                setExamQuestions(finalQuestions);
+                setAnswers({});
+                setFlags({});
+                setCurrentQ(0);
+                setTimeLeft(timeLimit * 60);
+                clearSession();
+                setStep('exam');
+            };
+
+            React.useEffect(() => {
+                if(step === 'exam' && timeLeft > 0) {
+                    const timerId = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+                    if(timeLeft % 60 === 0) localStorage.setItem('cia_save', JSON.stringify({ userId, userToken, examQuestions, answers, flags, currentQ, timeLeft, mode, timeLimit }));
+                    return () => clearTimeout(timerId);
+                } else if (step === 'exam' && timeLeft === 0) {
+                    submitExam();
+                }
+            }, [timeLeft, step]);
+
+            const formatTime = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+            const toggleFlag = () => setFlags({...flags, [currentQ]: !flags[currentQ]});
+            
+            const handleSelectChoice = (choice) => {
+                if (mode === 'practice' && answers[currentQ]) return; 
+                setAnswers({...answers, [currentQ]: choice});
+            };
+
+            const calculateScore = () => examQuestions.reduce((acc, q, i) => acc + (answers[i] === q.Answer ? 1 : 0), 0);
+
+            const submitExam = async () => {
+                setLoading(true);
+                const score = calculateScore();
+                const timeUsed = (timeLimit * 60) - timeLeft;
+                
+                const filterText = mixRules.map(r => `${r.part}${r.session !== 'All' ? '>'+r.session : ''}${r.unit !== 'All' ? '>'+r.unit : ''}(${r.percent}%)`).join(' + ');
+
+                try {
+                    const res = await fetch(`${WEB_APP_URL}?action=saveHistory`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            id: userId, token: userToken, name: user, mode: mode, filter: filterText, score: score, total: examQuestions.length, timeUsed: Math.floor(timeUsed/60)
+                        })
+                    });
+                    const result = await res.json();
+                    
+                    if(result.status === 'error' && result.message === 'SESSION_EXPIRED') {
+                        alert("❌ มีการล็อกอินไอดีนี้จากอุปกรณ์อื่น! เซสชันของคุณถูกยกเลิกและระบบจะไม่บันทึกคะแนนเพื่อความปลอดภัย");
+                        clearSession();
+                        window.location.reload();
+                        return;
+                    }
+                } catch(e) { console.error("Save history failed"); }
+                
+                clearSession();
+                setLoading(false);
+                setStep('result');
+            };
+
+            const toggleDarkMode = () => setIsDark(!isDark);
+
+            // ================= RENDER =================
+            return (
+                <div className={`${isDark ? 'dark' : ''}`}>
+                    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 transition-colors duration-300 font-sans pb-10">
+                        
+                        <div className="bg-white dark:bg-gray-800 shadow px-6 py-4 flex justify-between items-center">
+                            <h1 className="text-xl font-black text-blue-800 dark:text-blue-400">CIA Pro System</h1>
+                            <button onClick={toggleDarkMode} className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-full font-bold shadow-sm">
+                                {isDark ? '☀️ โหมดสว่าง' : '🌙 โหมดมืด'}
+                            </button>
+                        </div>
+
+                        {step === 'login' && (
+                            <div className="flex justify-center items-center mt-20">
+                                <form onSubmit={handleLogin} className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl w-96 space-y-5 border dark:border-gray-700">
+                                    <h2 className="text-2xl font-bold text-center text-gray-800 dark:text-gray-100">เข้าสู่ระบบ</h2>
+                                    <input name="username" placeholder="ID" required className="w-full p-3 border dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                                    <input name="password" type="password" placeholder="Password" required className="w-full p-3 border dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                                    <button type="submit" disabled={loading} className="w-full bg-blue-700 hover:bg-blue-800 text-white p-3 rounded font-bold shadow-md transition">{loading ? 'กำลังตรวจสอบ...' : 'Login'}</button>
+                                </form>
+                            </div>
+                        )}
+
+                        {step === 'dashboard' && (
+                            <div className="max-w-4xl mx-auto mt-10 p-8 bg-white dark:bg-gray-800 rounded-xl shadow-xl border dark:border-gray-700">
+                                <h2 className="text-2xl font-bold mb-4 border-b dark:border-gray-700 pb-3">ยินดีต้อนรับ, {user}</h2>
+                                
+                                {hasSavedSession && (
+                                    <div className="mb-6 bg-yellow-100 dark:bg-yellow-900/30 p-4 rounded-lg border border-yellow-400 flex justify-between items-center">
+                                        <div><b className="text-yellow-800 dark:text-yellow-400">มีข้อสอบค้างอยู่!</b> <br/><span className="text-sm dark:text-gray-300">ทำต่อจากที่ค้างไว้ได้เลย</span></div>
+                                        <button onClick={resumeSession} className="bg-yellow-600 hover:bg-yellow-700 text-white px-5 py-2 rounded font-bold shadow">ทำต่อ (Resume)</button>
+                                    </div>
+                                )}
+
+                                <div className="space-y-5 bg-gray-50 dark:bg-gray-700/50 p-5 rounded-lg border dark:border-gray-600">
+                                    <div>
+                                        <label className="font-bold block mb-1">โหมดการสอบ:</label>
+                                        <select value={mode} onChange={e=>setMode(e.target.value)} className="w-full p-2.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 outline-none focus:ring-2 focus:ring-blue-500">
+                                            <option value="serious">จริงจัง (เฉลยตอนจบทีเดียว)</option>
+                                            <option value="practice">ท่องจำ (เฉลยและเฉลยสีทันทีรายข้อ)</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="p-4 border dark:border-gray-600 rounded bg-white dark:bg-gray-800 space-y-4">
+                                        <div className="flex justify-between items-center border-b dark:border-gray-700 pb-2">
+                                            <h3 className="font-bold text-blue-700 dark:text-blue-400">📚 กำหนดสัดส่วนข้อสอบ (%)</h3>
+                                            <span className={`font-bold ${mixRules.reduce((sum, r) => sum + parseInt(r.percent || 0), 0) === 100 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
+                                                รวม: {mixRules.reduce((sum, r) => sum + parseInt(r.percent || 0), 0)}%
+                                            </span>
+                                        </div>
+
+                                        {mixRules.map((rule) => {
+                                            const availableSessions = rule.part === 'All' ? [] : ['All', ...new Set(allQuestions.filter(q => q.Part === rule.part).map(q => q.Session).filter(Boolean))];
+                                            const availableUnits = rule.session === 'All' ? [] : ['All', ...new Set(allQuestions.filter(q => q.Part === rule.part && q.Session === rule.session).map(q => q.Unit).filter(Boolean))];
+                                            
+                                            return (
+                                                <div key={rule.id} className="flex flex-wrap md:flex-nowrap gap-2 items-end bg-gray-50 dark:bg-gray-700/50 p-3 rounded border dark:border-gray-600">
+                                                    <div className="flex-1 min-w-[120px]">
+                                                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">Part</label>
+                                                        <select value={rule.part} onChange={e => updateRule(rule.id, 'part', e.target.value)} className="w-full p-2 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 outline-none">
+                                                            {['All', ...new Set(allQuestions.map(q => q.Part).filter(Boolean))].map(p => <option key={p} value={p}>{p}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex-1 min-w-[150px]">
+                                                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">Session</label>
+                                                        <select value={rule.session} onChange={e => updateRule(rule.id, 'session', e.target.value)} disabled={rule.part === 'All'} className="w-full p-2 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 outline-none disabled:opacity-50 truncate">
+                                                            {rule.part === 'All' ? <option value="All">All</option> : ['All', ...availableSessions].map(s => <option key={s} value={s}>{s}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex-1 min-w-[150px]">
+                                                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">Unit</label>
+                                                        <select value={rule.unit} onChange={e => updateRule(rule.id, 'unit', e.target.value)} disabled={rule.session === 'All'} className="w-full p-2 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 outline-none disabled:opacity-50 truncate">
+                                                            {rule.session === 'All' ? <option value="All">All</option> : ['All', ...availableUnits].map(u => <option key={u} value={u}>{u}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="w-20">
+                                                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">สัดส่วน(%)</label>
+                                                        <input type="number" value={rule.percent} onChange={e => updateRule(rule.id, 'percent', e.target.value)} className="w-full p-2 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 outline-none text-center" min="0" max="100" />
+                                                    </div>
+                                                    {mixRules.length > 1 && (
+                                                        <button onClick={() => removeRule(rule.id)} className="p-2 mb-[2px] bg-red-100 hover:bg-red-200 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded transition" title="ลบหัวข้อนี้">❌</button>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                        <button onClick={addRule} className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded border border-indigo-200 dark:border-indigo-800 border-dashed font-bold text-sm transition">+ เพิ่มหัวข้อสัดส่วน</button>
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                        <div className="flex-1">
+                                            <label className="font-bold block mb-1">จำนวนข้อรวม:</label>
+                                            <input type="number" value={numQ} onChange={e=>setNumQ(e.target.value)} className="w-full p-2.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 outline-none" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="font-bold block mb-1">เวลา (นาที):</label>
+                                            <input type="number" value={timeLimit} onChange={e=>setTimeLimit(e.target.value)} className="w-full p-2.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 outline-none" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onClick={startExam} className="w-full mt-6 bg-blue-700 hover:bg-blue-800 text-white font-bold py-3.5 rounded-lg shadow-lg transition text-lg">🚀 เริ่มทำข้อสอบ</button>
+                            </div>
+                        )}
+
+                        {step === 'exam' && (
+                            <div className="max-w-6xl mx-auto mt-6 flex gap-6 px-4">
+                                <div className="w-1/4 bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg border dark:border-gray-700 h-fit max-h-[85vh] overflow-y-auto grid grid-cols-4 gap-2 content-start">
+                                    {examQuestions.map((q, idx) => {
+                                        let bg = "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600";
+                                        if (currentQ === idx) bg = "bg-blue-500 text-white ring-2 ring-blue-400";
+                                        else if (answers[idx]) {
+                                            if (mode === 'practice') {
+                                                bg = answers[idx] === q.Answer ? "bg-green-500 text-white" : "bg-red-500 text-white";
+                                            } else {
+                                                bg = "bg-blue-300 dark:bg-blue-700 text-blue-900 dark:text-white";
+                                            }
+                                        }
+                                        return (
+                                            <button key={idx} onClick={() => setCurrentQ(idx)} className={`py-2 rounded font-bold text-sm relative transition ${bg}`}>
+                                                {idx + 1}
+                                                {flags[idx] && <span className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full border border-white"></span>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                
+                                <div className="w-3/4 bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg border dark:border-gray-700 relative">
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none text-6xl font-black rotate-[-30deg] z-0 overflow-hidden break-all px-10">
+                                        {userId}
+                                    </div>
+
+                                    <div className="relative z-10">
+                                        <div className="flex justify-between items-center mb-6 border-b dark:border-gray-700 pb-4">
+                                            <div className="text-xl font-bold">ข้อ {currentQ + 1} / {examQuestions.length}</div>
+                                            <div className="text-xl font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-4 py-1.5 rounded-full border border-red-200 dark:border-red-800">⏱ {formatTime(timeLeft)}</div>
+                                            <div className="space-x-3">
+                                                <button onClick={saveSession} className="bg-gray-700 text-white px-4 py-1.5 rounded font-bold shadow-sm">Save & Pause</button>
+                                                <button onClick={toggleFlag} className={`px-4 py-1.5 rounded font-bold shadow-sm ${flags[currentQ] ? 'bg-yellow-400 text-black' : 'bg-gray-200 dark:bg-gray-700'}`}>🚩 Flag</button>
+                                                <button onClick={() => setLang(lang==='TH'?'EN':'TH')} className="bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 px-4 py-1.5 rounded font-bold shadow-sm">TH/EN</button>
+                                            </div>
+                                        </div>
+
+                                        <div className="mb-8">
+                                            <span className="inline-block bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 text-xs px-3 py-1 rounded-full mb-4">
+                                                {q.Part} {q.Session ? `> ${q.Session}` : ''} {q.Unit ? `> ${q.Unit}` : ''}
+                                            </span>
+                                            <h3 className="text-2xl font-medium leading-relaxed">{lang === 'TH' ? q.Question_TH : q.Question_EN}</h3>
+                                        </div>
+
+                                        <div className="space-y-4 mb-8">
+                                            {['A', 'B', 'C', 'D'].map(c => {
+                                                const answered = answers[currentQ];
+                                                let style = "border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700";
+                                                
+                                                if (answered === c) style = "bg-blue-50 dark:bg-blue-900/30 border-blue-500 font-bold text-blue-900 dark:text-blue-200";
+                                                
+                                                if (mode === 'practice' && answered) {
+                                                    if (c === q.Answer) style = "bg-green-50 dark:bg-green-900/30 border-green-500 font-bold text-green-800 dark:text-green-400";
+                                                    else if (c === answered && c !== q.Answer) style = "bg-red-50 dark:bg-red-900/30 border-red-400 line-through text-red-600 dark:text-red-400";
+                                                }
+
+                                                return (
+                                                    <div key={c} onClick={() => handleSelectChoice(c)} className={`p-4 border-2 rounded-xl cursor-pointer transition ${style} ${mode === 'practice' && answered ? 'cursor-not-allowed' : ''}`}>
+                                                        <span className="inline-block w-8 font-black">{c}.</span> {lang === 'TH' ? q[`Choice${c}_TH`] : q[`Choice${c}_EN`]}
+                                                        {mode === 'practice' && answered && c === q.Answer && <span className="float-right text-green-600">✅</span>}
+                                                        {mode === 'practice' && answered && c === answered && c !== q.Answer && <span className="float-right text-red-500">❌</span>}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+
+                                        {mode === 'practice' && answers[currentQ] && (
+                                            <div className="bg-blue-50 dark:bg-gray-700 p-6 rounded-xl border border-blue-200 dark:border-gray-600 mb-4 animate-fade-in">
+                                                <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-2">💡 คำอธิบายเฉลย: </h4>
+                                                <p className="text-blue-900 dark:text-gray-200 leading-relaxed">{lang === 'TH' ? q.Explain_TH : q.Explain_EN}</p>
+                                            </div>
+                                        )}
+
+                                        <div className="flex justify-between mt-10 pt-6 border-t dark:border-gray-700">
+                                            <button onClick={() => setCurrentQ(Math.max(0, currentQ - 1))} className="bg-gray-200 dark:bg-gray-700 px-8 py-3 rounded-lg font-bold shadow-sm transition">⬅ ก่อนหน้า</button>
+                                            <button onClick={() => {if(window.confirm('ยืนยันส่งข้อสอบ?')) submitExam()}} className="bg-red-600 hover:bg-red-700 text-white px-10 py-3 rounded-lg font-bold shadow-lg transition">{loading ? '⏳ กำลังส่ง...' : 'ส่งข้อสอบ'}</button>
+                                            <button onClick={() => setCurrentQ(Math.min(examQuestions.length - 1, currentQ + 1))} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold shadow-sm transition">ถัดไป ➡</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {step === 'result' && (
+                            <div className="max-w-4xl mx-auto mt-10">
+                                <div className="bg-white dark:bg-gray-800 p-10 rounded-xl shadow-xl border-t-8 border-green-500 text-center mb-8">
+                                    <h2 className="text-3xl font-bold mb-4">ผลการสอบของคุณ</h2>
+                                    <div className="text-7xl font-black text-green-600 dark:text-green-400 mb-6">{calculateScore()} <span className="text-3xl text-gray-400">/ {examQuestions.length}</span></div>
+                                    <div className="flex gap-4 justify-center">
+                                        <button onClick={()=> setStep('dashboard')} className="bg-gray-800 dark:bg-gray-700 text-white px-8 py-3 rounded-lg font-bold shadow transition">🏠 กลับหน้าแรก</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl border dark:border-gray-700">
+                                    <h3 className="text-xl font-bold text-red-600 dark:text-red-400 mb-6 flex items-center">📉 สรุปข้อที่ตอบผิด (ทบทวนด่วน!)</h3>
+                                    <div className="space-y-6">
+                                        {examQuestions.map((q, idx) => {
+                                            if (answers[idx] === q.Answer) return null; 
+                                            const uAns = answers[idx] ? q[`Choice${answers[idx]}_TH`] : 'ไม่ได้ตอบ';
+                                            const cAns = q[`Choice${q.Answer}_TH`];
+                                            
+                                            return (
+                                                <div key={idx} className="bg-red-50 dark:bg-gray-700/50 p-5 rounded-lg border border-red-100 dark:border-gray-600">
+                                                    <div className="font-bold mb-2">ข้อที่ {idx + 1}: {q.Question_TH}</div>
+                                                    <div className="text-sm space-y-1 mb-3">
+                                                        <div className="text-red-600 dark:text-red-400">❌ คุณตอบ: {answers[idx] ? `${answers[idx]}. ${uAns}` : 'ข้าม'}</div>
+                                                        <div className="text-green-600 dark:text-green-400">✅ เฉลย: {q.Answer}. {cAns}</div>
+                                                    </div>
+                                                    <div className="text-sm bg-white dark:bg-gray-800 p-3 rounded border dark:border-gray-600 text-gray-600 dark:text-gray-300">
+                                                        <b>คำอธิบาย:</b> {q.Explain_TH}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                        {calculateScore() === examQuestions.length && (
+                                            <div className="text-center text-green-600 font-bold p-6 bg-green-50 dark:bg-green-900/20 rounded-lg">🎉 ยอดเยี่ยม! คุณตอบถูกทุกข้อ</div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
