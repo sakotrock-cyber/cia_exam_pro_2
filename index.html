@@ -17,7 +17,7 @@
 
     <script type="text/babel">
         // 🛑 นำ Web App URL "ตัวใหม่ล่าสุด" มาวางที่นี่ 🛑
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyuuMX7EqEjyQc0DXIDe7awcnxiqVLLPWCB6xzaDslG5hGdo9NgsCSETTTO5kpF0YsM/exec";
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzmseLoDmh782RmKYB4eujKEeGtzcr1nZR_FbKzONXSse5-ZbT3PKLhxjz-jlGBeu-Q/exec";
 
         function App() {
             const [isDark, setIsDark] = React.useState(false);
@@ -41,7 +41,6 @@
             const [timeLimit, setTimeLimit] = React.useState(120);
             const [mode, setMode] = React.useState('serious'); 
             
-            // เพิ่ม unit เข้ามาใน state เริ่มต้น
             const [mixRules, setMixRules] = React.useState([{ id: Date.now(), part: 'All', session: 'All', unit: 'All', percent: 100 }]);
             
             const [hasSavedSession, setHasSavedSession] = React.useState(false);
@@ -125,10 +124,10 @@
                         const updated = { ...r, [field]: value };
                         if (field === 'part') {
                             updated.session = 'All';
-                            updated.unit = 'All'; // รีเซ็ต Unit ด้วยเมื่อเปลี่ยน Part
+                            updated.unit = 'All'; 
                         }
                         if (field === 'session') {
-                            updated.unit = 'All'; // รีเซ็ต Unit ด้วยเมื่อเปลี่ยน Session
+                            updated.unit = 'All'; 
                         }
                         return updated;
                     }
@@ -150,24 +149,24 @@
                 mixRules.forEach(rule => {
                     let targetCount = Math.round(totalRequested * (rule.percent / 100));
                     
-                    let pool = allQuestions.filter(q => {
-                        if (usedQuestions.has(q)) return false; 
-                        if (rule.part !== 'All' && q.Part !== rule.part) return false;
-                        if (rule.session !== 'All' && q.Session !== rule.session) return false;
-                        if (rule.unit !== 'All' && q.Unit !== rule.unit) return false; // กรองด้วย Unit
+                    let pool = allQuestions.filter(question => {
+                        if (usedQuestions.has(question)) return false; 
+                        if (rule.part !== 'All' && question.Part !== rule.part) return false;
+                        if (rule.session !== 'All' && question.Session !== rule.session) return false;
+                        if (rule.unit !== 'All' && question.Unit !== rule.unit) return false; 
                         return true;
                     });
                     
                     pool.sort(() => 0.5 - Math.random());
                     let selected = pool.slice(0, targetCount);
-                    selected.forEach(q => usedQuestions.add(q));
+                    selected.forEach(question => usedQuestions.add(question));
                     
                     finalQuestions = [...finalQuestions, ...selected];
                 });
 
                 if (finalQuestions.length < totalRequested) {
                     let needed = totalRequested - finalQuestions.length;
-                    let remainingPool = allQuestions.filter(q => !usedQuestions.has(q));
+                    let remainingPool = allQuestions.filter(question => !usedQuestions.has(question));
                     
                     remainingPool.sort(() => 0.5 - Math.random());
                     let pad = remainingPool.slice(0, needed);
@@ -206,7 +205,7 @@
                 setAnswers({...answers, [currentQ]: choice});
             };
 
-            const calculateScore = () => examQuestions.reduce((acc, q, i) => acc + (answers[i] === q.Answer ? 1 : 0), 0);
+            const calculateScore = () => examQuestions.reduce((acc, question, i) => acc + (answers[i] === question.Answer ? 1 : 0), 0);
 
             const submitExam = async () => {
                 setLoading(true);
@@ -238,6 +237,9 @@
             };
 
             const toggleDarkMode = () => setIsDark(!isDark);
+
+            // 👉 เพิ่มบรรทัดนี้เข้ามาเพื่อกันแครช (กำหนดข้อมูลข้อสอบข้อปัจจุบัน)
+            const q = examQuestions[currentQ] || {};
 
             // ================= RENDER =================
             return (
@@ -291,15 +293,15 @@
                                         </div>
 
                                         {mixRules.map((rule) => {
-                                            const availableSessions = rule.part === 'All' ? [] : ['All', ...new Set(allQuestions.filter(q => q.Part === rule.part).map(q => q.Session).filter(Boolean))];
-                                            const availableUnits = rule.session === 'All' ? [] : ['All', ...new Set(allQuestions.filter(q => q.Part === rule.part && q.Session === rule.session).map(q => q.Unit).filter(Boolean))];
+                                            const availableSessions = rule.part === 'All' ? [] : ['All', ...new Set(allQuestions.filter(question => question.Part === rule.part).map(question => question.Session).filter(Boolean))];
+                                            const availableUnits = rule.session === 'All' ? [] : ['All', ...new Set(allQuestions.filter(question => question.Part === rule.part && question.Session === rule.session).map(question => question.Unit).filter(Boolean))];
                                             
                                             return (
                                                 <div key={rule.id} className="flex flex-wrap md:flex-nowrap gap-2 items-end bg-gray-50 dark:bg-gray-700/50 p-3 rounded border dark:border-gray-600">
                                                     <div className="flex-1 min-w-[120px]">
                                                         <label className="text-xs font-bold text-gray-500 dark:text-gray-400">Part</label>
                                                         <select value={rule.part} onChange={e => updateRule(rule.id, 'part', e.target.value)} className="w-full p-2 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 outline-none">
-                                                            {['All', ...new Set(allQuestions.map(q => q.Part).filter(Boolean))].map(p => <option key={p} value={p}>{p}</option>)}
+                                                            {['All', ...new Set(allQuestions.map(question => question.Part).filter(Boolean))].map(p => <option key={p} value={p}>{p}</option>)}
                                                         </select>
                                                     </div>
                                                     <div className="flex-1 min-w-[150px]">
@@ -345,12 +347,12 @@
                         {step === 'exam' && (
                             <div className="max-w-6xl mx-auto mt-6 flex gap-6 px-4">
                                 <div className="w-1/4 bg-white dark:bg-gray-800 p-5 rounded-xl shadow-lg border dark:border-gray-700 h-fit max-h-[85vh] overflow-y-auto grid grid-cols-4 gap-2 content-start">
-                                    {examQuestions.map((q, idx) => {
+                                    {examQuestions.map((question, idx) => {
                                         let bg = "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600";
                                         if (currentQ === idx) bg = "bg-blue-500 text-white ring-2 ring-blue-400";
                                         else if (answers[idx]) {
                                             if (mode === 'practice') {
-                                                bg = answers[idx] === q.Answer ? "bg-green-500 text-white" : "bg-red-500 text-white";
+                                                bg = answers[idx] === question.Answer ? "bg-green-500 text-white" : "bg-red-500 text-white";
                                             } else {
                                                 bg = "bg-blue-300 dark:bg-blue-700 text-blue-900 dark:text-white";
                                             }
@@ -439,20 +441,20 @@
                                 <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-xl border dark:border-gray-700">
                                     <h3 className="text-xl font-bold text-red-600 dark:text-red-400 mb-6 flex items-center">📉 สรุปข้อที่ตอบผิด (ทบทวนด่วน!)</h3>
                                     <div className="space-y-6">
-                                        {examQuestions.map((q, idx) => {
-                                            if (answers[idx] === q.Answer) return null; 
-                                            const uAns = answers[idx] ? q[`Choice${answers[idx]}_TH`] : 'ไม่ได้ตอบ';
-                                            const cAns = q[`Choice${q.Answer}_TH`];
+                                        {examQuestions.map((question, idx) => {
+                                            if (answers[idx] === question.Answer) return null; 
+                                            const uAns = answers[idx] ? question[`Choice${answers[idx]}_TH`] : 'ไม่ได้ตอบ';
+                                            const cAns = question[`Choice${question.Answer}_TH`];
                                             
                                             return (
                                                 <div key={idx} className="bg-red-50 dark:bg-gray-700/50 p-5 rounded-lg border border-red-100 dark:border-gray-600">
-                                                    <div className="font-bold mb-2">ข้อที่ {idx + 1}: {q.Question_TH}</div>
+                                                    <div className="font-bold mb-2">ข้อที่ {idx + 1}: {question.Question_TH}</div>
                                                     <div className="text-sm space-y-1 mb-3">
                                                         <div className="text-red-600 dark:text-red-400">❌ คุณตอบ: {answers[idx] ? `${answers[idx]}. ${uAns}` : 'ข้าม'}</div>
-                                                        <div className="text-green-600 dark:text-green-400">✅ เฉลย: {q.Answer}. {cAns}</div>
+                                                        <div className="text-green-600 dark:text-green-400">✅ เฉลย: {question.Answer}. {cAns}</div>
                                                     </div>
                                                     <div className="text-sm bg-white dark:bg-gray-800 p-3 rounded border dark:border-gray-600 text-gray-600 dark:text-gray-300">
-                                                        <b>คำอธิบาย:</b> {q.Explain_TH}
+                                                        <b>คำอธิบาย:</b> {question.Explain_TH}
                                                     </div>
                                                 </div>
                                             )
